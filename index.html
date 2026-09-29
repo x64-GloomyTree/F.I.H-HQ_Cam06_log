@@ -7,13 +7,18 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
+  :root {
+    --ar: 1.33;                                  /* gif aspect ratio, set by JS */
+    --fw: min(80vw, calc(52vh * var(--ar)));     /* feed width: drives all sizing */
+  }
+
   html, body { margin:0; height:100%; background:#020402; overflow:hidden; }
   body {
     font-family:'VT323','Lucida Console',monospace;
     color:#fff;
     display:flex; flex-direction:column; align-items:center;
     justify-content:center;
-    padding-bottom:6vh;
+    padding-bottom:4vh;
     box-sizing:border-box;
     -webkit-font-smoothing:none; font-smooth:never;
     text-shadow:0 0 2px rgba(255,255,255,.6), 1px 0 rgba(255,0,0,.35), -1px 0 rgba(0,120,255,.35);
@@ -23,9 +28,9 @@
   /* Camera feed */
   #feed {
     position:relative;
-    width:min(70vw,420px);
-    border:2px solid #444;
-    box-shadow:0 0 20px rgba(0,255,100,.15);
+    width:var(--fw);
+    border:max(2px, calc(var(--fw) * .005)) solid #444;
+    box-shadow:0 0 calc(var(--fw) * .05) rgba(0,255,100,.15);
   }
   #feed.glitch { animation:jitter .35s steps(1) 1; }
   #gif {
@@ -37,28 +42,38 @@
     filter:contrast(1.3) saturate(1.2) sepia(.4) hue-rotate(75deg) brightness(1.15);
   }
   .cam {
-    position:absolute; font-size:1.3rem; letter-spacing:2px;
+    position:absolute;
+    font-size:calc(var(--fw) * .05);
+    letter-spacing:.1em;
     color:#fff; text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,255,255,.5);
-    padding:6px 10px; pointer-events:none;
+    padding:calc(var(--fw) * .012) calc(var(--fw) * .02);
+    pointer-events:none;
   }
   .tl{top:0;left:0} .tr{top:0;right:0}
   .bl{bottom:0;left:0} .br{bottom:0;right:0}
   .rec {
-    display:inline-block; width:10px; height:10px; margin-right:8px;
+    display:inline-block;
+    width:calc(var(--fw) * .022); height:calc(var(--fw) * .022);
+    margin-right:calc(var(--fw) * .014);
     background:#f22; border-radius:50%; box-shadow:0 0 6px #f22;
     animation:blink 1s steps(1) infinite;
   }
-  .corner { position:absolute; width:16px; height:16px; border:2px solid rgba(255,255,255,.7); pointer-events:none; }
-  .c1{top:6px;left:6px;border-right:0;border-bottom:0}
-  .c2{top:6px;right:6px;border-left:0;border-bottom:0}
-  .c3{bottom:6px;left:6px;border-right:0;border-top:0}
-  .c4{bottom:6px;right:6px;border-left:0;border-top:0}
+  .corner {
+    position:absolute;
+    width:calc(var(--fw) * .04); height:calc(var(--fw) * .04);
+    border:max(2px, calc(var(--fw) * .004)) solid rgba(255,255,255,.7);
+    pointer-events:none;
+  }
+  .c1{top:2%;left:2%;border-right:0;border-bottom:0}
+  .c2{top:2%;right:2%;border-left:0;border-bottom:0}
+  .c3{bottom:2%;left:2%;border-right:0;border-top:0}
+  .c4{bottom:2%;right:2%;border-left:0;border-top:0}
 
   /* Status UI */
-  .ui { margin-top:24px; text-align:center; letter-spacing:2px; }
-  .label { font-size:2rem; }
-  .status { font-size:2.4rem; color:#39ff5a; text-shadow:0 0 8px #39ff5a; }
-  .sub { font-size:1.1rem; opacity:.85; margin-top:6px; }
+  .ui { margin-top:calc(var(--fw) * .05); text-align:center; letter-spacing:.06em; width:var(--fw); }
+  .label  { font-size:calc(var(--fw) * .08); line-height:1.1; }
+  .status { font-size:calc(var(--fw) * .105); line-height:1.1; color:#39ff5a; text-shadow:0 0 8px #39ff5a; }
+  .sub    { font-size:calc(var(--fw) * .048); margin-top:calc(var(--fw) * .012); opacity:.85; }
   .cursor::after { content:"_"; animation:blink 1s steps(1) infinite; }
 
   /* Scanlines + vignette */
@@ -94,7 +109,7 @@
   #start {
     position:fixed; inset:0; z-index:20; background:#000;
     display:flex; align-items:center; justify-content:center;
-    font-size:2rem; cursor:pointer; color:#9f9;
+    font-size:clamp(1.5rem, 4vw, 3rem); cursor:pointer; color:#9f9;
   }
 </style>
 </head>
@@ -122,10 +137,32 @@
 <canvas id="noise"></canvas>
 
 <script>
-  // Audio (click required by browsers)
+  // Read real gif aspect ratio so sizing fits any gif
+  const gifEl = document.getElementById('gif');
+  function setAR(){
+    if (gifEl.naturalWidth) {
+      document.documentElement.style.setProperty('--ar', gifEl.naturalWidth / gifEl.naturalHeight);
+    }
+  }
+  if (gifEl.complete) setAR(); else gifEl.addEventListener('load', setAR);
+
+  // Audio: quiet + muffled through a low-pass filter
   const bgm = document.getElementById('bgm');
-  bgm.volume = 0.25;
   document.getElementById('start').addEventListener('click', e => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const actx = new AC();
+    const src = actx.createMediaElementSource(bgm);
+
+    const lp = actx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;    // lower = more muffled
+    lp.Q.value = 0.7;
+
+    const gain = actx.createGain();
+    gain.gain.value = 0.12;      // volume 0 to 1
+
+    src.connect(lp).connect(gain).connect(actx.destination);
+    actx.resume();
     bgm.play();
     e.currentTarget.remove();
   });
@@ -145,12 +182,12 @@
   }
   setInterval(draw, 80);
 
-  // Feed clock (viewer's computer date/time) + fake elapsed timer with RNG offset
+  // Feed clock (viewer's date/time) + fake elapsed timer with RNG offset
   const pad = n => String(n).padStart(2,'0');
   let start = Number(localStorage.getItem('cam06_start'));
   if (!start) {
-    const hours = 18 + Math.random()*52;              // 18h to 70h
-    const extra = Math.floor(Math.random()*3600);     // random extra seconds
+    const hours = 18 + Math.random()*52;
+    const extra = Math.floor(Math.random()*3600);
     start = Date.now() - (hours*3600 + extra)*1000;
     localStorage.setItem('cam06_start', start);
   }
