@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>...</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+  html, body { margin:0; height:100%; background:#020402; overflow:hidden; }
+  body {
+    font-family:'VT323','Lucida Console',monospace;
+    color:#fff;
+    display:flex; flex-direction:column; align-items:center;
+    justify-content:center;
+    padding-bottom:6vh;
+    box-sizing:border-box;
+    -webkit-font-smoothing:none; font-smooth:never;
+    text-shadow:0 0 2px rgba(255,255,255,.6), 1px 0 rgba(255,0,0,.35), -1px 0 rgba(0,120,255,.35);
+    animation:flicker 4s infinite;
+  }
+
+  /* Camera feed */
+  #feed {
+    position:relative;
+    width:min(70vw,420px);
+    border:2px solid #444;
+    box-shadow:0 0 20px rgba(0,255,100,.15);
+  }
+  #feed.glitch { animation:jitter .35s steps(1) 1; }
+  #gif {
+    display:block; width:100%;
+    image-rendering:pixelated;
+    filter:contrast(1.05) saturate(.9) sepia(.4) hue-rotate(60deg);
+  }
+  #feed.glitch #gif {
+    filter:contrast(1.3) saturate(1.2) sepia(.4) hue-rotate(75deg) brightness(1.15);
+  }
+  .cam {
+    position:absolute; font-size:1.3rem; letter-spacing:2px;
+    color:#fff; text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,255,255,.5);
+    padding:6px 10px; pointer-events:none;
+  }
+  .tl{top:0;left:0} .tr{top:0;right:0}
+  .bl{bottom:0;left:0} .br{bottom:0;right:0}
+  .rec {
+    display:inline-block; width:10px; height:10px; margin-right:8px;
+    background:#f22; border-radius:50%; box-shadow:0 0 6px #f22;
+    animation:blink 1s steps(1) infinite;
+  }
+  .corner { position:absolute; width:16px; height:16px; border:2px solid rgba(255,255,255,.7); pointer-events:none; }
+  .c1{top:6px;left:6px;border-right:0;border-bottom:0}
+  .c2{top:6px;right:6px;border-left:0;border-bottom:0}
+  .c3{bottom:6px;left:6px;border-right:0;border-top:0}
+  .c4{bottom:6px;right:6px;border-left:0;border-top:0}
+
+  /* Status UI */
+  .ui { margin-top:24px; text-align:center; letter-spacing:2px; }
+  .label { font-size:2rem; }
+  .status { font-size:2.4rem; color:#39ff5a; text-shadow:0 0 8px #39ff5a; }
+  .sub { font-size:1.1rem; opacity:.85; margin-top:6px; }
+  .cursor::after { content:"_"; animation:blink 1s steps(1) infinite; }
+
+  /* Scanlines + vignette */
+  .crt::before {
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:10;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.25) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.7) 100%);
+  }
+  #noise {
+    position:fixed; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:11; opacity:.09; mix-blend-mode:screen;
+  }
+  .crt::after {
+    content:""; position:fixed; left:0; right:0; height:80px; z-index:12;
+    pointer-events:none;
+    background:linear-gradient(transparent, rgba(255,255,255,.04), transparent);
+    animation:roll 7s linear infinite;
+  }
+
+  @keyframes roll { from{top:-100px} to{top:100%} }
+  @keyframes blink { 50%{opacity:0} }
+  @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:.92} 94%{opacity:1} 97%{opacity:.95} }
+  @keyframes jitter {
+    0%   { transform:translate(3px,-1px) skewX(2deg); }
+    20%  { transform:translate(-4px,2px); }
+    40%  { transform:translate(2px,1px) skewX(-3deg); }
+    60%  { transform:translate(-3px,-2px); }
+    80%  { transform:translate(4px,0); }
+    100% { transform:none; }
+  }
+
+  #start {
+    position:fixed; inset:0; z-index:20; background:#000;
+    display:flex; align-items:center; justify-content:center;
+    font-size:2rem; cursor:pointer; color:#9f9;
+  }
+</style>
+</head>
+<body class="crt">
+
+<div id="start">[ click to connect ]</div>
+
+<div id="feed">
+  <img id="gif" src="cam06_log.gif" alt="">
+  <div class="cam tl"><span class="rec"></span>REC</div>
+  <div class="cam tr">CAM06</div>
+  <div class="cam bl" id="clock">--/--/---- --:--:--</div>
+  <div class="cam br" id="elapsed">00:00:00</div>
+  <div class="corner c1"></div><div class="corner c2"></div>
+  <div class="corner c3"></div><div class="corner c4"></div>
+</div>
+
+<div class="ui">
+  <div class="label">Target Status :</div>
+  <div class="status">Manifested</div>
+  <div class="sub cursor">Awaiting agent deploy</div>
+</div>
+
+<audio id="bgm" src="ambient.mp3" loop preload="auto"></audio>
+<canvas id="noise"></canvas>
+
+<script>
+  // Audio (click required by browsers)
+  const bgm = document.getElementById('bgm');
+  bgm.volume = 0.25;
+  document.getElementById('start').addEventListener('click', e => {
+    bgm.play();
+    e.currentTarget.remove();
+  });
+
+  // Animated static noise
+  const c = document.getElementById('noise'), ctx = c.getContext('2d');
+  function resize(){ c.width = innerWidth/3; c.height = innerHeight/3; }
+  resize(); addEventListener('resize', resize);
+  c.style.imageRendering = 'pixelated';
+  function draw(){
+    const img = ctx.createImageData(c.width, c.height), d = img.data;
+    for (let i=0;i<d.length;i+=4){
+      const v = Math.random()*255;
+      d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+  }
+  setInterval(draw, 80);
+
+  // Feed clock (viewer's computer date/time) + fake elapsed timer with RNG offset
+  const pad = n => String(n).padStart(2,'0');
+  let start = Number(localStorage.getItem('cam06_start'));
+  if (!start) {
+    const hours = 18 + Math.random()*52;              // 18h to 70h
+    const extra = Math.floor(Math.random()*3600);     // random extra seconds
+    start = Date.now() - (hours*3600 + extra)*1000;
+    localStorage.setItem('cam06_start', start);
+  }
+  function tick(){
+    const d = new Date();
+    document.getElementById('clock').textContent =
+      `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const s = Math.floor((Date.now()-start)/1000);
+    document.getElementById('elapsed').textContent =
+      `${pad(Math.floor(s/3600))}:${pad(Math.floor(s%3600/60))}:${pad(s%60)}`;
+  }
+  tick(); setInterval(tick, 1000);
+
+  // Random glitch jitter every 4 to 14 seconds, sometimes a double hit
+  const feed = document.getElementById('feed');
+  function glitch(){
+    feed.classList.remove('glitch');
+    void feed.offsetWidth;
+    feed.classList.add('glitch');
+    if (Math.random() < 0.3) setTimeout(glitch, 450);
+  }
+  (function schedule(){
+    setTimeout(() => { glitch(); schedule(); }, 4000 + Math.random()*10000);
+  })();
+</script>
+</body>
+</html>
